@@ -49,11 +49,12 @@
           "tailwind-merge": "*",
           "vaul": "^1.1.2"
       },
-      "devDependencies": {
-          "@types/node": "^20.10.0",
-          "@vitejs/plugin-react-swc": "^3.10.2",
-          "vite": "6.3.5"
-      },
+  "devDependencies": {
+      "@types/node": "^20.10.0",
+      "@vitejs/plugin-react-swc": "^3.10.2",
+      "vite": "6.3.5",
+      "@rollup/rollup-linux-x64-gnu": "^4.30.0"
+  },
       "scripts": {
           "dev": "vite",
           "build": "vite build"
