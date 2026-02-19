@@ -66,7 +66,7 @@ export default function Home({ onSelectPet, onAdminClick }: HomeProps) {
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-sm lg:text-[15px]">
                 <span className="font-bold text-[#0a0a0a] text-[15px] lg:text-[16px]">
-                  ${totalRaised.toLocaleString()} raised of ${totalGoal.toLocaleString()} goal
+                  AED {totalRaised.toLocaleString()} raised of AED {totalGoal.toLocaleString()} goal
                 </span>
                 <span className="text-[#64748b] text-[14px] lg:text-[15px]">
                   {activeCampaigns} active campaigns • {overallProgress}%
@@ -235,20 +235,16 @@ function CampaignCardDesktop({ pet, onClick }: CampaignCardProps) {
         </h3>
 
         {/* Progress Bar */}
-        <div className={`h-2.5 rounded-full mb-3 ${
-          isFunded ? 'bg-[#3b82f6]' : 'bg-[#e5e7eb]'
-        }`}>
-          {!isFunded && (
-            <div
-              className="bg-[#3b82f6] h-2.5 rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-            />
-          )}
+        <div className="h-2.5 rounded-full mb-3 bg-[#e5e7eb]">
+          <div
+            className="bg-[#3b82f6] h-2.5 rounded-full transition-all duration-500"
+            style={{ width: `${Math.min(progressPercentage, 100)}%` }}
+          />
         </div>
 
         {/* Amount */}
         <p className="text-[16px] font-bold text-[#0a0a0a] leading-relaxed">
-          ${totalDonated.toLocaleString()} raised of ${pet.estimated_cost.toLocaleString()} goal
+          AED {totalDonated.toLocaleString()} raised of AED {pet.estimated_cost.toLocaleString()} goal
         </p>
       </div>
     </div>
@@ -313,20 +309,16 @@ function CampaignCardMobile({ pet, onClick }: CampaignCardProps) {
           </div>
 
           {/* Progress Bar */}
-          <div className={`h-2 rounded-full mb-2 ${
-            isFunded ? 'bg-[#3b82f6]' : 'bg-[#e5e7eb]'
-          }`}>
-            {!isFunded && (
-              <div
-                className="bg-[#3b82f6] h-2 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-              />
-            )}
+          <div className="h-2 rounded-full mb-2 bg-[#e5e7eb]">
+            <div
+              className="bg-[#3b82f6] h-2 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(progressPercentage, 100)}%` }}
+            />
           </div>
 
           {/* Amount */}
           <p className="text-[13px] font-semibold text-[#0a0a0a] leading-5">
-            ${totalDonated.toLocaleString()} raised of ${pet.estimated_cost.toLocaleString()} goal
+            AED {totalDonated.toLocaleString()} raised of AED {pet.estimated_cost.toLocaleString()} goal
           </p>
         </div>
       </div>
