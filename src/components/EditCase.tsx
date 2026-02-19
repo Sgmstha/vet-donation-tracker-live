@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { ArrowLeft, Trash2, Plus, X, Save, FileText } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, X, Save, FileText, Loader2, Upload } from 'lucide-react';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
@@ -15,6 +15,15 @@ interface EditCaseProps {
 export default function EditCase({ petId, onBack }: EditCaseProps) {
   const [pet, setPet] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [originalCase, setOriginalCase] = useState({
+    animal_name: '',
+    medical_condition: '',
+    estimated_cost: '',
+    payment_link: '',
+    pet_story: '',
+    instagram_link: '',
+    status: 'pending' as any
+  });
   const [editedCase, setEditedCase] = useState({
     animal_name: '',
     medical_condition: '',
@@ -33,7 +42,9 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
     donor_name: ''
   });
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
+  const [isUploadingInvoices, setIsUploadingInvoices] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
     const loadPet = async () => {
@@ -41,7 +52,7 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
         const data = await fetchInvoiceById(petId);
         if (data) {
           setPet(data);
-          setEditedCase({
+          const caseData = {
             animal_name: data.animal_name,
             medical_condition: data.medical_condition,
             estimated_cost: data.estimated_cost.toString(),
@@ -49,7 +60,9 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
             pet_story: data.pet_story || '',
             instagram_link: data.instagram_link || '',
             status: data.status
-          });
+          };
+          setOriginalCase(caseData);
+          setEditedCase(caseData);
           setDonations(data.donations || []);
         }
       } catch (error) {
@@ -61,6 +74,15 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
 
     loadPet();
   }, [petId]);
+
+  // Track changes
+  useEffect(() => {
+    const hasChanges = 
+      JSON.stringify(editedCase) !== JSON.stringify(originalCase) ||
+      photoFile !== null ||
+      invoiceFiles.length > 0;
+    setHasUnsavedChanges(hasChanges);
+  }, [editedCase, originalCase, photoFile, invoiceFiles]);
   
   if (loading) {
     return (
@@ -116,31 +138,45 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
         updates.pet_photo = photoUrl;
       }
 
-      // Upload new invoice if provided
-      if (invoiceFile) {
-        const timestamp = Date.now();
-        const invoicePath = `invoices/${timestamp}-${invoiceFile.name}`;
-        const invoiceUrl = await uploadFileToStorage(invoiceFile, 'pet-invoices', invoicePath);
+      // Upload new invoices if provided (multiple files)
+      if (invoiceFiles.length > 0) {
+        setIsUploadingInvoices(true);
+        const invoiceUrls: string[] = [];
         
-        if (!invoiceUrl) {
-          alert('Failed to upload invoice. Please try again.');
+        for (const file of invoiceFiles) {
+          const timestamp = Date.now();
+          const invoicePath = `invoices/${timestamp}-${file.name}`;
+          const invoiceUrl = await uploadFileToStorage(file, 'pet-invoices', invoicePath);
+          
+          if (invoiceUrl) {
+            invoiceUrls.push(invoiceUrl);
+          }
+        }
+        
+        if (invoiceUrls.length === 0) {
+          alert('Failed to upload invoices. Please try again.');
           setIsSaving(false);
+          setIsUploadingInvoices(false);
           return;
         }
         
-        updates.invoice_file = invoiceUrl;
+        // For now, store the first invoice URL (database schema may need update for multiple)
+        updates.invoice_file = invoiceUrls[0];
+        setIsUploadingInvoices(false);
       }
 
       await updateInvoice(petId, updates);
       alert('Case saved successfully!');
       setPhotoFile(null);
-      setInvoiceFile(null);
+      setInvoiceFiles([]);
+      setHasUnsavedChanges(false);
       onBack();
     } catch (error) {
       console.error('Error saving case:', error);
       alert('Failed to save case. Please try again.');
     } finally {
       setIsSaving(false);
+      setIsUploadingInvoices(false);
     }
   };
 
@@ -194,6 +230,27 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
     }
   };
 
+  const handleInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setInvoiceFiles([...invoiceFiles, ...files]);
+    }
+  };
+
+  const removeInvoiceFile = (index: number) => {
+    setInvoiceFiles(invoiceFiles.filter((_, i) => i !== index));
+  };
+
+  const handleBack = () => {
+    if (hasUnsavedChanges) {
+      if (confirm('You have unsaved changes. Are you sure you want to leave?')) {
+        onBack();
+      }
+    } else {
+      onBack();
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -206,7 +263,7 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center gap-4 mb-2">
             <Button 
-              onClick={onBack}
+              onClick={handleBack}
               variant="ghost"
               size="sm"
               className="gap-2 text-[#0a0a0a] hover:bg-slate-100"
@@ -226,6 +283,47 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 sm:gap-6">
           {/* Left Column */}
           <div className="space-y-6">
+            {/* Pet Photo */}
+            <Card className="bg-white border-[#e2e8f0]">
+              <CardContent className="pt-6">
+                <div className="relative aspect-square rounded-lg overflow-hidden bg-[#f1f5f9] mb-4">
+                  {pet.pet_photo ? (
+                    <img
+                      src={pet.pet_photo}
+                      alt={pet.animal_name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[#45556c]">
+                      No photo uploaded
+                    </div>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="pet-photo">Change Pet Photo</Label>
+                  <div className="relative">
+                    <input
+                      id="pet-photo"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                    />
+                    <label 
+                      htmlFor="pet-photo"
+                      className="flex items-center justify-center gap-2 w-full p-3 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                    >
+                      <Upload className="size-5 text-blue-600" />
+                      <span className="text-sm text-blue-600">
+                        {photoFile ? photoFile.name : 'Click to upload new photo'}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Basic Information */}
             <Card className="bg-white border-[#e2e8f0]">
               <CardHeader>
@@ -280,23 +378,6 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
                     className="bg-[#f3f3f5] border-0"
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pet-photo">Pet Photo (Optional - Update)</Label>
-                  <Input
-                    id="pet-photo"
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
-                    className="bg-[#f3f3f5] border-0"
-                  />
-                  {pet.pet_photo && !photoFile && (
-                    <p className="text-sm text-slate-500">Current photo: {pet.pet_photo.split('/').pop()}</p>
-                  )}
-                  {photoFile && (
-                    <p className="text-sm text-blue-600">New photo selected: {photoFile.name}</p>
-                  )}
-                </div>
               </CardContent>
             </Card>
 
@@ -342,7 +423,9 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
                       <div className="space-y-2">
                         <Label htmlFor="donation-amount">Donation Amount *</Label>
                         <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555555]">AED</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555555] text-sm font-medium pointer-events-none z-10">
+                            AED
+                          </span>
                           <Input
                             id="donation-amount"
                             type="number"
@@ -350,7 +433,7 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
                             placeholder="0.00"
                             value={newDonation.amount}
                             onChange={(e) => setNewDonation({ ...newDonation, amount: e.target.value })}
-                            className="pl-7 bg-[#f6f6f6] border-[#e5e5e5]"
+                            className="pl-14 bg-[#f6f6f6] border-[#e5e5e5]"
                           />
                         </div>
                       </div>
@@ -451,65 +534,92 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="invoice-file">Invoice Document (Optional)</Label>
-                  <Input
-                    id="invoice-file"
-                    type="file"
-                    onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
-                    className="bg-[#f3f3f5] border-0"
-                  />
-                  {pet.invoice_file && !invoiceFile && (
-                    <div className="flex items-center justify-between p-3 border border-[#e2e8f0] rounded-lg bg-[#f8fafc]">
-                      <div className="flex items-center gap-2">
-                        <FileText className="size-4 text-[#155dfc]" />
-                        <a 
-                          href={pet.invoice_file} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#155dfc] hover:underline"
-                        >
-                          {pet.invoice_file.split('/').pop()}
-                        </a>
+                  <Label htmlFor="invoice-file">Invoice Documents (Optional - Multiple Files)</Label>
+                  <div className="relative">
+                    <input
+                      id="invoice-file"
+                      type="file"
+                      accept="application/pdf,image/*"
+                      multiple
+                      onChange={handleInvoiceUpload}
+                      disabled={isUploadingInvoices}
+                      className="hidden"
+                    />
+                    <label 
+                      htmlFor="invoice-file"
+                      className={`flex items-center justify-center gap-2 w-full p-3 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                        isUploadingInvoices 
+                          ? 'border-gray-300 bg-gray-50 cursor-not-allowed' 
+                          : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      {isUploadingInvoices ? (
+                        <>
+                          <Loader2 className="size-5 text-gray-600 animate-spin" />
+                          <span className="text-sm text-gray-600">Uploading invoices...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="size-5 text-gray-600" />
+                          <span className="text-sm text-gray-600">
+                            {invoiceFiles.length > 0 
+                              ? `${invoiceFiles.length} file(s) selected - Click to add more` 
+                              : 'Click to upload invoices (PDF/Image)'}
+                          </span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  {/* Current Invoice */}
+                  {pet.invoice_file && invoiceFiles.length === 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-[#0f172b]">Current Invoice:</p>
+                      <div className="flex items-center justify-between p-3 border border-[#e2e8f0] rounded-lg bg-[#f8fafc]">
+                        <div className="flex items-center gap-2">
+                          <FileText className="size-4 text-[#155dfc]" />
+                          <a 
+                            href={pet.invoice_file} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm text-[#155dfc] hover:underline"
+                          >
+                            {pet.invoice_file.split('/').pop()}
+                          </a>
+                        </div>
                       </div>
                     </div>
                   )}
-                  {invoiceFile && (
-                    <p className="text-sm text-blue-600">New invoice selected: {invoiceFile.name}</p>
+
+                  {/* New Invoice Files List */}
+                  {invoiceFiles.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-[#0f172b]">New Invoices to Upload:</p>
+                      {invoiceFiles.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 border border-[#e2e8f0] rounded-lg bg-[#f8fafc]">
+                          <div className="flex items-center gap-2">
+                            <FileText className="size-4 text-[#155dfc]" />
+                            <span className="text-sm text-[#45556c]">{file.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeInvoiceFile(index)}
+                            className="text-red-600 hover:text-red-700"
+                            disabled={isUploadingInvoices}
+                          >
+                            <X className="size-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Right Column - Pet Photo & Summary */}
+          {/* Right Column - Financial Summary */}
           <div className="space-y-6">
-            {/* Pet Photo */}
-            <Card className="bg-white border-[#e2e8f0]">
-              <CardHeader>
-                <CardTitle className="text-xl">Pet Photo</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="relative aspect-square rounded-lg overflow-hidden bg-[#f1f5f9] mb-4">
-                  {pet.pet_photo ? (
-                    <>
-                      <img
-                        src={pet.pet_photo}
-                        alt={pet.animal_name}
-                        className="w-full h-full object-cover"
-                      />
-                      <button className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700">
-                        <X className="size-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[#45556c]">
-                      No photo uploaded
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Financial Summary */}
             <Card className="bg-white border-[#e2e8f0]">
               <CardHeader>
@@ -517,17 +627,23 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between items-center text-sm gap-2">
                     <span className="text-[#45556c]">Total Debt:</span>
-                    <span className="text-[#0f172b] font-semibold">AED {parseFloat(editedCase.estimated_cost).toFixed(2)}</span>
+                    <span className="text-[#0f172b] font-semibold whitespace-nowrap">
+                      AED {parseFloat(editedCase.estimated_cost || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between items-center text-sm gap-2">
                     <span className="text-[#45556c]">Amount Paid:</span>
-                    <span className="text-[#16a34a] font-semibold">AED {totalDonated.toFixed(2)}</span>
+                    <span className="text-[#16a34a] font-semibold whitespace-nowrap">
+                      AED {totalDonated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <div className="flex justify-between text-sm pt-2 border-t border-[#e2e8f0]">
+                  <div className="flex justify-between items-center text-sm pt-2 border-t border-[#e2e8f0] gap-2">
                     <span className="text-[#0f172b] font-medium">Remaining:</span>
-                    <span className="text-[#155dfc] font-bold">AED {remaining > 0 ? remaining.toFixed(2) : '0.00'}</span>
+                    <span className="text-[#155dfc] font-bold whitespace-nowrap">
+                      AED {(remaining > 0 ? remaining : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
 
@@ -551,17 +667,37 @@ export default function EditCase({ petId, onBack }: EditCaseProps) {
             <div className="space-y-3">
               <Button 
                 onClick={handleSave}
-                className="w-full bg-[#155dfc] hover:bg-[#1447e6] h-11 gap-2"
+                disabled={isSaving || isUploadingInvoices}
+                className="w-full bg-[#155dfc] hover:bg-[#1447e6] h-11 gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Save className="size-4" />
-                Save Changes
+                {isSaving || isUploadingInvoices ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    {isUploadingInvoices ? 'Uploading...' : 'Saving...'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-4" />
+                    Save Changes
+                  </>
+                )}
               </Button>
               <Button 
                 onClick={handleDelete}
-                className="w-full bg-red-600 hover:bg-red-700 text-white h-11 gap-2"
+                disabled={isDeleting || isSaving}
+                className="w-full bg-red-600 hover:bg-red-700 text-white h-11 gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Trash2 className="size-4" />
-                Delete Case
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="size-4" />
+                    Delete Case
+                  </>
+                )}
               </Button>
             </div>
           </div>
